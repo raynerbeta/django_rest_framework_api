@@ -43,7 +43,7 @@ class CartSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     user_id = serializers.IntegerField(write_only=True)
     menuitem = MenuItemSerializer(read_only=True)
-    menuitem_id = MenuItemSerializer(write_only=True)
+    menuitem_id = serializers.IntegerField(write_only=True)    
 
     class Meta:
         model = Cart
@@ -51,19 +51,24 @@ class CartSerializer(serializers.ModelSerializer):
             'user',
             'user_id',
             'menuitem',
-
             'menuitem_id',
             'quantity',
             'unit_price',
             'price'
         ]
+        #obtener unit_price de menuitem
+        extra_kwargs = {
+            'unit_price': {
+                'min_val': 0
+            }
+        }
 
 
 class OrderSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     user_id = serializers.IntegerField(write_only=True)
     delivery_crew = UserSerializer(read_only=True)
-    delivery_crew_id = UserSerializer(write_only=True)
+    delivery_crew_id = serializers.IntegerField(write_only=True)
 
     class Meta:
         model = Order
