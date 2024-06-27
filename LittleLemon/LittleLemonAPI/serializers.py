@@ -6,10 +6,7 @@ from .models import Category, MenuItem, Cart, Order, OrderItem
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = [
-            'id',
-            'title'
-        ]
+        fields = ["id", "title"]
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
@@ -18,50 +15,35 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MenuItem
-        fields = [
-            'id',
-            'title',
-            'price',
-            'featured',
-            'category',
-            'category_id'
-        ]
+        fields = ["id", "title", "price", "featured", "category", "category_id"]
         # depth = 1
 
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = [
-            'id',
-            'username',
-            'email'
-        ]
+        fields = ["id", "username", "email"]
 
 
 class CartSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     user_id = serializers.IntegerField(write_only=True)
     menuitem = MenuItemSerializer(read_only=True)
-    menuitem_id = serializers.IntegerField(write_only=True)    
+    menuitem_id = serializers.IntegerField(write_only=True)
 
     class Meta:
         model = Cart
         fields = [
-            'user',
-            'user_id',
-            'menuitem',
-            'menuitem_id',
-            'quantity',
-            'unit_price',
-            'price'
+            "user",
+            "user_id",
+            "menuitem",
+            "menuitem_id",
+            "quantity",
+            "unit_price",
+            "price",
         ]
-        #obtener unit_price de menuitem
-        extra_kwargs = {
-            'unit_price': {
-                'min_val': 0
-            }
-        }
+        # obtener unit_price de menuitem
+        #extra_kwargs = {"unit_price": {"min_val": 0}}
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -73,13 +55,13 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'user',
-            'user_id',
-            'delivery_crew',
-            'delivery_crew_id',
-            'status',
-            'total',
-            'date'
+            "user",
+            "user_id",
+            "delivery_crew",
+            "delivery_crew_id",
+            "status",
+            "total",
+            "date",
         ]
 
 
@@ -92,10 +74,10 @@ class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = [
-            'order',
-            'order_id',
-            'menuitem',
-            'menuitem_id',
-            'quantity',
-            'unit_price'
+            "order",
+            "order_id",
+            "menuitem",
+            "menuitem_id",
+            "quantity",
+            "unit_price",
         ]

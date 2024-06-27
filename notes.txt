@@ -1,0 +1,21 @@
+Superuser
+- Name: admin
+- Pass: admin
+
+Managers:
+- Name: manager1
+- Pass: mana@123
+- Name: manager2
+- Pass: mana@123
+
+Delivery crew
+- Name: delivery1
+- Pass: deli@123
+- Name: delivery2
+- Pass: deli@123
+
+Customers:
+- Name: customer1
+- Pass: cust@123
+- Name: customer2
+- Pass: cust@123
