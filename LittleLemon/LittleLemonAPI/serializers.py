@@ -1,4 +1,4 @@
-from decimal import Decimal
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import ParseError
 from django.contrib.auth.models import User
@@ -18,7 +18,6 @@ class MenuItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = MenuItem
         fields = ["id", "title", "price", "featured", "category", "category_id"]
-        # depth = 1
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -68,38 +67,52 @@ class CartSerializer(serializers.ModelSerializer):
         return Cart.objects.create(**validated_data)
 
 
-class OrderSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
-    user_id = serializers.IntegerField(write_only=True)
-    delivery_crew = UserSerializer(read_only=True)
-    delivery_crew_id = serializers.IntegerField(write_only=True)
-
-    class Meta:
-        model = Order
-        fields = [
-            "user",
-            "user_id",
-            "delivery_crew",
-            "delivery_crew_id",
-            "status",
-            "total",
-            "date",
-        ]
-
-
 class OrderItemSerializer(serializers.ModelSerializer):
-    order = OrderSerializer(read_only=True)
-    order_id = serializers.IntegerField(write_only=True)
+    # order = OrderSerializer(read_only=True)
+    # order_id = serializers.IntegerField(write_only=True)
     menuitem = MenuItemSerializer(read_only=True)
     menuitem_id = serializers.IntegerField(write_only=True)
 
     class Meta:
         model = OrderItem
         fields = [
-            "order",
-            "order_id",
+            # "order",
+            # "order_id",
             "menuitem",
             "menuitem_id",
             "quantity",
             "unit_price",
         ]
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    user_id = serializers.IntegerField(write_only=True)
+    delivery_crew = UserSerializer(read_only=True)
+    delivery_crew_id = serializers.IntegerField(
+        required=False, write_only=True, allow_null=True
+    )
+    order_items = OrderItemSerializer(many=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "user",
+            "user_id",
+            "delivery_crew",
+            "delivery_crew_id",
+            "status",
+            "order_items",
+            "total",
+            "date",
+        ]
+
+    def create(self, validated_data):
+        order_items = validated_data.pop("order_items", [])
+        with transaction.atomic():
+            order = Order.objects.create(**validated_data)
+            order.order_items = []
+            for order_item in order_items:
+                order.order_items.append(OrderItem.objects.create(order=order, **order_item))
+        return order
