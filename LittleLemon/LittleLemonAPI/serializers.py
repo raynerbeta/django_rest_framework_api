@@ -68,16 +68,12 @@ class CartSerializer(serializers.ModelSerializer):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    # order = OrderSerializer(read_only=True)
-    # order_id = serializers.IntegerField(write_only=True)
     menuitem = MenuItemSerializer(read_only=True)
     menuitem_id = serializers.IntegerField(write_only=True)
 
     class Meta:
         model = OrderItem
         fields = [
-            # "order",
-            # "order_id",
             "menuitem",
             "menuitem_id",
             "quantity",
@@ -92,7 +88,7 @@ class OrderSerializer(serializers.ModelSerializer):
     delivery_crew_id = serializers.IntegerField(
         required=False, write_only=True, allow_null=True
     )
-    order_items = OrderItemSerializer(many=True)
+    orderitem_set = OrderItemSerializer(many=True)
 
     class Meta:
         model = Order
@@ -103,16 +99,18 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivery_crew",
             "delivery_crew_id",
             "status",
-            "order_items",
+            "orderitem_set",
             "total",
             "date",
         ]
 
     def create(self, validated_data):
-        order_items = validated_data.pop("order_items", [])
+        order_items = validated_data.pop("orderitem_set", [])
         with transaction.atomic():
             order = Order.objects.create(**validated_data)
             order.order_items = []
             for order_item in order_items:
-                order.order_items.append(OrderItem.objects.create(order=order, **order_item))
+                order.order_items.append(
+                    OrderItem.objects.create(order=order, **order_item)
+                )
         return order

@@ -36,7 +36,15 @@ class CategoriesView(generics.ListCreateAPIView):
 class MenuItemsView(generics.ListCreateAPIView):
     queryset = MenuItem.objects.all()
     serializer_class = MenuItemSerializer
+    ordering_fields = ["title", "price", "category_id"]
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        ordering = self.request.query_params.get("ordering", None)
+        if ordering in self.ordering_fields:
+            queryset = queryset.order_by(ordering)
+        return queryset
 
     def get_permissions(self):
         if self.request.method != "GET":
@@ -64,7 +72,15 @@ class MenuItemView(generics.RetrieveUpdateDestroyAPIView):
 class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
     queryset = Cart.objects.all()
     serializer_class = CartSerializer
+    ordering_fields = ["quantity", "unit_price", "price"]
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        ordering = self.request.query_params.get("ordering", None)
+        if ordering in self.ordering_fields:
+            queryset = queryset.order_by(ordering)
+        return queryset
 
     def get_permissions(self):
         groups = self.request.user.groups.count()
@@ -103,7 +119,18 @@ class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
 class OrdersView(generics.ListCreateAPIView):
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
+    ordering_fields = ["user_id", "delivery_crew_id", "status", "date", "total"]
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        date_search = self.request.query_params.get("date", None)
+        if date_search:
+            queryset = queryset.filter(date=date_search)
+        ordering = self.request.query_params.get("ordering", None)
+        if ordering in self.ordering_fields:
+            queryset = queryset.order_by(ordering)
+        return queryset
 
     def get(self, request, *args, **kwargs):
         orders = Order.objects.all()
@@ -141,7 +168,7 @@ class OrdersView(generics.ListCreateAPIView):
             total += item.price
         order = {
             "user_id": request.user.id,
-            "order_items": order_items,
+            "orderitem_set": order_items,
             "total": total,
             "date": datetime.date.today(),
         }
@@ -150,3 +177,54 @@ class OrdersView(generics.ListCreateAPIView):
         serializer.save()
         cart_items.delete()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class OrderView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Order.objects.all()
+    serializer_class = OrderSerializer
+    throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get(self, request, *args, **kwargs):
+        groups = self.request.user.groups
+        if groups.count() > 0 or request.user.is_superuser:
+            raise PermissionDenied({"message": "Only customers can access this method"})
+        try:
+            order = Order.objects.get(pk=kwargs.get("pk"))
+            if order is None:
+                return Response(
+                    {"message": "The order doesn't exist"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if order.user.id != request.user.id:
+                raise PermissionDenied(
+                    {"message": "You don't have authorization to view this order"}
+                )
+            serializer = OrderItemSerializer(
+                data=OrderItem.objects.filter(order=order), many=True
+            )
+            serializer.is_valid()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Order.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+    def update(self, request, *args, **kwargs):
+        groups = self.request.user.groups
+        if groups.filter(name="Manager").exists():
+            for key in list(request.data.keys()):
+                if key not in ["status", "delivery_crew_id"]:
+                    del request.data[key]
+        elif groups.filter(name="Delivery_crew").exists():
+            for key in list(request.data.keys()):
+                if key != "status":
+                    del request.data[key]
+        else:
+            raise PermissionDenied(
+                {"message": "Only managers and delivery crew can access this method"}
+            )
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        groups = self.request.user.groups
+        if not groups.filter(name="Manager").exists():
+            raise PermissionDenied({"message": "Only managers can access this method"})
+        return super().destroy(request, *args, **kwargs)
