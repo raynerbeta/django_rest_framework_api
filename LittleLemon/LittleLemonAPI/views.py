@@ -68,7 +68,6 @@ class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
         try:
             data: QueryDict = request.data.copy()
             data.appendlist('user_id', request.user.id)
-            print(data)
             item = CartSerializer(data=data)
             item.is_valid(raise_exception=True)
             item.save()
