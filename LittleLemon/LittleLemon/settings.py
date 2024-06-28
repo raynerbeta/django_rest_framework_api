@@ -139,8 +139,8 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle'
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '20/minute',
-        'user': '100/minute'
+        'anon': '5/minute',
+        'user': '20/minute'
     },
     'DEFAULT_FILTER_BACKENDS': [
         'rest_framework.filters.OrderingFilter',

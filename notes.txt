@@ -1,3 +1,9 @@
+PATH:
+- api/token/login
+- api/users/ (REGISTER)
+- api/ -> menuitems, categories, cart/menu-items, orders
+- api/groups/ -> manager, delivery-crew
+
 Superuser
 - Name: admin
 - Pass: admin

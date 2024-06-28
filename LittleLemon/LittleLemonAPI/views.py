@@ -1,12 +1,17 @@
 import datetime
 from decimal import Decimal
-from multiprocessing.managers import BaseManager
-from django.http import QueryDict
+from django.contrib.auth.models import User, Group
+from django.shortcuts import get_object_or_404
+from django.db import transaction
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import (
+    ValidationError,
+    PermissionDenied,
+    NotFound,
+    APIException,
+)
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from .models import Category, MenuItem, Cart, Order, OrderItem
 from .serializers import (
@@ -19,6 +24,44 @@ from .serializers import (
 )
 
 
+def check_if_admin(self, raise_exception=True):
+    if not self.request.user.is_superuser:
+        if raise_exception:
+            raise PermissionDenied({"message": "Only admin can access this method"})
+        else:
+            return False
+    return True
+
+
+def check_if_manager(self, raise_exception=True):
+    if not self.request.user.groups.filter(name="Manager").exists():
+        if raise_exception:
+            raise PermissionDenied({"message": "Only managers can access this method"})
+        else:
+            return False
+    return True
+
+
+def check_if_delivery(self, raise_exception=True):
+    if not self.request.user.groups.filter(name="Delivery_crew").exists():
+        if raise_exception:
+            raise PermissionDenied(
+                {"message": "Only delivery crew members can access this method"}
+            )
+        else:
+            return False
+    return True
+
+
+def check_if_customer(self, raise_exception=True):
+    if self.request.user.groups.count() > 0 or check_if_admin(self, False):
+        if raise_exception:
+            raise PermissionDenied({"message": "Only customers can access this method"})
+        else:
+            return False
+    return True
+
+
 class CategoriesView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -26,10 +69,7 @@ class CategoriesView(generics.ListCreateAPIView):
 
     def get_permissions(self):
         if self.request.method != "GET":
-            if not self.request.user.groups.filter(name="Manager").exists():
-                raise PermissionDenied(
-                    {"message": "Only managers can access this method"}
-                )
+            check_if_admin(self)
         return super().get_permissions()
 
 
@@ -41,6 +81,9 @@ class MenuItemsView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        category = self.request.query_params.get("category", None)
+        if category:
+            queryset = queryset.filter(category=category)
         ordering = self.request.query_params.get("ordering", None)
         if ordering in self.ordering_fields:
             queryset = queryset.order_by(ordering)
@@ -48,10 +91,7 @@ class MenuItemsView(generics.ListCreateAPIView):
 
     def get_permissions(self):
         if self.request.method != "GET":
-            if not self.request.user.groups.filter(name="Manager").exists():
-                raise PermissionDenied(
-                    {"message": "Only managers can access this method"}
-                )
+            check_if_admin(self)
         return super().get_permissions()
 
 
@@ -62,10 +102,7 @@ class MenuItemView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_permissions(self):
         if self.request.method != "GET":
-            if not self.request.user.groups.filter(name="Manager").exists():
-                raise PermissionDenied(
-                    {"message": "Only managers can access this method"}
-                )
+            check_if_manager(self)
         return super().get_permissions()
 
 
@@ -83,10 +120,7 @@ class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
         return queryset
 
     def get_permissions(self):
-        groups = self.request.user.groups.count()
-        is_admin = self.request.user.is_superuser
-        if groups > 0 or is_admin:
-            raise PermissionDenied({"message": "Only customers can access this method"})
+        check_if_customer(self)
         return super().get_permissions()
 
     def get(self, request, *args, **kwargs):
@@ -96,7 +130,7 @@ class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
             self.queryset = res.data
             return super().get(request, *args, **kwargs)
         except:
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            raise APIException({"message": "The cart wasn't retrieved"})
 
     def post(self, request, *args, **kwargs):
         try:
@@ -105,15 +139,17 @@ class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
             request._full_data = new_data
             return super().post(request, *args, **kwargs)
         except:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError({"message": "User id not provided"})
 
     def delete(self, request, *args, **kwargs):
         try:
             to_delete = Cart.objects.filter(user=request.user.id)
             to_delete.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except Cart.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"message": "The cart was emptied"}, status=status.HTTP_200_OK
+            )
+        except:
+            raise APIException({"message": "The cart wasn't emptied"})
 
 
 class OrdersView(generics.ListCreateAPIView):
@@ -134,27 +170,22 @@ class OrdersView(generics.ListCreateAPIView):
 
     def get(self, request, *args, **kwargs):
         orders = Order.objects.all()
-        groups = self.request.user.groups
-        if groups.filter(name="Manager").exists():
+        if check_if_manager(self, False):
             pass
-        elif groups.filter(name="Delivery_crew").exists():
+        elif check_if_delivery(self, False):
             orders = Order.objects.filter(delivery_crew=request.user.id)
-        elif groups.count() == 0:
+        elif check_if_customer(self, False):
             orders = Order.objects.filter(user=request.user.id)
         else:
-            raise PermissionDenied({"message": "Only customers can access this method"})
+            raise PermissionDenied({"message": "You don't have access to this method"})
         self.queryset = orders
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
-        groups = self.request.user.groups.count()
-        if not groups == 0:
-            raise PermissionDenied({"message": "Only customers can access this method"})
+        check_if_customer(self)
         cart_items = Cart.objects.filter(user=request.user.id)
         if not cart_items.exists():
-            return Response(
-                {"message": "The cart is empty"}, status=status.HTTP_400_BAD_REQUEST
-            )
+            raise NotFound({"message": "The cart is empty"})
         order_items = []
         total = Decimal(0)
         for item in cart_items:
@@ -185,16 +216,9 @@ class OrderView(generics.RetrieveUpdateDestroyAPIView):
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     def get(self, request, *args, **kwargs):
-        groups = self.request.user.groups
-        if groups.count() > 0 or request.user.is_superuser:
-            raise PermissionDenied({"message": "Only customers can access this method"})
+        check_if_customer(self)
         try:
-            order = Order.objects.get(pk=kwargs.get("pk"))
-            if order is None:
-                return Response(
-                    {"message": "The order doesn't exist"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            order = get_object_or_404(Order, pk=kwargs.get("pk"))
             if order.user.id != request.user.id:
                 raise PermissionDenied(
                     {"message": "You don't have authorization to view this order"}
@@ -205,18 +229,31 @@ class OrderView(generics.RetrieveUpdateDestroyAPIView):
             serializer.is_valid()
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Order.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
+            raise NotFound()
 
     def update(self, request, *args, **kwargs):
-        groups = self.request.user.groups
-        if groups.filter(name="Manager").exists():
+        if check_if_manager(self, False):
             for key in list(request.data.keys()):
                 if key not in ["status", "delivery_crew_id"]:
-                    del request.data[key]
-        elif groups.filter(name="Delivery_crew").exists():
+                    raise ValidationError(
+                        {"message": "Managers can only update status and delivery crew"}
+                    )
+            if request.data.get("delivery_crew_id"):
+                delivery = get_object_or_404(User, pk=request.data["delivery_crew_id"])
+                if not delivery.groups.filter(name="Delivery_crew").exists():
+                    raise ValidationError(
+                        {"message": "Only a delivery crew member can be assigned"}
+                    )
+        elif check_if_delivery(self, False):
             for key in list(request.data.keys()):
                 if key != "status":
-                    del request.data[key]
+                    raise ValidationError(
+                        {"message": "Delivery crew can only update status"}
+                    )
+            if self.get_object().delivery_crew.id != request.user.id:
+                raise PermissionDenied(
+                    {"message": "You aren't authorized to update this order"}
+                )
         else:
             raise PermissionDenied(
                 {"message": "Only managers and delivery crew can access this method"}
@@ -228,3 +265,106 @@ class OrderView(generics.RetrieveUpdateDestroyAPIView):
         if not groups.filter(name="Manager").exists():
             raise PermissionDenied({"message": "Only managers can access this method"})
         return super().destroy(request, *args, **kwargs)
+
+
+class ManagersUserGroupView(generics.ListCreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get_permissions(self):
+        check_if_admin(self)
+        return super().get_permissions()
+
+    def get(self, request, *args, **kwargs):
+        self.queryset = User.objects.filter(groups__name="Manager")
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        user_id = self.request.data.get("user_id")
+        if not user_id:
+            raise ValidationError({"message": "User id wasn't provided"})
+        user = get_object_or_404(User, pk=user_id)
+        if user.groups.filter(name="Manager").exists():
+            raise ValidationError({"message": "The user is already a manager"})
+        manager_group = get_object_or_404(Group, name="Manager")
+        try:
+            user.groups.add(manager_group)
+            return Response(
+                {"message": "User added as manager"}, status=status.HTTP_201_CREATED
+            )
+        except:
+            raise APIException({"message": "The user couldn't be added"})
+
+
+class ManagerUserGroupView(generics.DestroyAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get_permissions(self):
+        check_if_admin(self)
+        return super().get_permissions()
+
+    def delete(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not instance.groups.filter(name="Manager").exists():
+            raise ValidationError({"message": "User is not a manager"})
+        manager_group = get_object_or_404(Group, name="Manager")
+        if manager_group in instance.groups.all():
+            instance.groups.remove(manager_group)
+        return Response(
+            {"messsage": "User removed from managers"}, status=status.HTTP_200_OK
+        )
+
+
+class DeliveryCrewUserGroupView(generics.ListCreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get_permissions(self):
+        check_if_manager(self)
+        return super().get_permissions()
+
+    def get(self, request, *args, **kwargs):
+        self.queryset = User.objects.filter(groups__name="Delivery_crew")
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        user_id = self.request.data["user_id"]
+        user = get_object_or_404(User, pk=user_id)
+        if user.groups.filter(name="Delivery_crew").exists():
+            raise ValidationError(
+                {"message": "The user is already a delivery crew member"}
+            )
+        delivery_group = get_object_or_404(Group, name="Delivery_crew")
+        try:
+            user.groups.add(delivery_group)
+            return Response(
+                {"message": "User added as a delivery crew member"},
+                status=status.HTTP_201_CREATED,
+            )
+        except:
+            raise APIException({"message": "The user couldn't be added"})
+
+
+class DeliveryUserGroupView(generics.DestroyAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    throttle_classes = [AnonRateThrottle, UserRateThrottle]
+
+    def get_permissions(self):
+        check_if_manager(self)
+        return super().get_permissions()
+
+    def delete(self, request, *args, **kwargs):
+        instance = self.get_object()
+        delivery_group = get_object_or_404(Group, name="Delivery_crew")
+        if not instance.groups.filter(name="Delivery_crew").exists():
+            raise ValidationError({"message": "The user is not a delivery crew member"})
+        if delivery_group in instance.groups.all():
+            instance.groups.remove(delivery_group)
+        return Response(
+            {"messsage": "User removed from delivery crew"}, status=status.HTTP_200_OK
+        )
