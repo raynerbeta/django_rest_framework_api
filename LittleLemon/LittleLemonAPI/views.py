@@ -63,6 +63,13 @@ def check_if_customer(self, raise_exception=True):
     return True
 
 
+def order_queryset(self, queryset):
+    ordering = self.request.query_params.get("ordering", None)
+    if ordering in self.ordering_fields:
+        return queryset.order_by(ordering)
+    return queryset
+
+
 class ManagersUserGroupView(generics.ListCreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -172,8 +179,9 @@ class CategoriesView(generics.ListCreateAPIView):
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     def get_permissions(self):
-        if self.request.method != "GET":
-            check_if_admin(self)
+        if self.request.method in self.allowed_methods:
+            if self.request.method != "GET":
+                check_if_admin(self)
         return super().get_permissions()
 
 
@@ -189,14 +197,12 @@ class MenuItemsView(generics.ListCreateAPIView):
         category = self.request.query_params.get("category", None)
         if category:
             queryset = queryset.filter(category=category)
-        ordering = self.request.query_params.get("ordering", None)
-        if ordering in self.ordering_fields:
-            queryset = queryset.order_by(ordering)
-        return queryset
+        return order_queryset(self, queryset)
 
     def get_permissions(self):
-        if self.request.method != "GET":
-            check_if_admin(self)
+        if self.request.method in self.allowed_methods:
+            if self.request.method != "GET":
+                check_if_admin(self)
         return super().get_permissions()
 
 
@@ -206,8 +212,9 @@ class MenuItemView(generics.RetrieveUpdateDestroyAPIView):
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     def get_permissions(self):
-        if self.request.method != "GET":
-            check_if_manager(self)
+        if self.request.method in self.allowed_methods:
+            if self.request.method != "GET":
+                check_if_manager(self)
         return super().get_permissions()
 
 
@@ -219,10 +226,7 @@ class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        ordering = self.request.query_params.get("ordering", None)
-        if ordering in self.ordering_fields:
-            queryset = queryset.order_by(ordering)
-        return queryset
+        return order_queryset(self, queryset)
 
     def get_permissions(self):
         check_if_customer(self)
@@ -272,11 +276,7 @@ class OrdersView(generics.ListCreateAPIView):
             queryset = queryset.filter(status=status)
         if date:
             queryset = queryset.filter(date=date)
-        ordering = self.request.query_params.get("ordering", None)
-        if ordering in self.ordering_fields:
-            queryset = queryset.order_by(ordering)
-
-        return queryset
+        return order_queryset(self, queryset)
 
     def get(self, request, *args, **kwargs):
         orders = Order.objects.all()
@@ -347,14 +347,9 @@ class OrderView(generics.RetrieveUpdateDestroyAPIView):
         except Order.DoesNotExist:
             raise NotFound()
 
-    def put(self, request, *args, **kwargs):
-        if request.method == "PUT":
-            raise MethodNotAllowed(
-                "PUT", {"message": "Method PUT not allowed, only PATCH is permitted"}
-            )
-        return super().dispatch(request, *args, **kwargs)
-
     def update(self, request, *args, **kwargs):
+        if request.method == "PUT":
+            raise MethodNotAllowed(request.method)
         if check_if_manager(self, False):
             for key in list(request.data.keys()):
                 if key not in ["status", "delivery_crew_id"]:
