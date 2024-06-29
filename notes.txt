@@ -1,6 +1,6 @@
 PATH:
-- api/token/login
-- api/users/ (REGISTER)
+- auth/token/login
+- auth/users/ (REGISTER)
 - api/ -> menuitems, categories, cart/menu-items, orders
 - api/groups/ -> manager, delivery-crew
 
