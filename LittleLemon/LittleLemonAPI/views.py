@@ -63,11 +63,31 @@ def check_if_customer(self, raise_exception=True):
     return True
 
 
+def search_queryset(self, queryset):
+    def get_param(field):
+        nonlocal self
+        value = self.request.query_params.get(field, None)
+        return {"true": True, "false": False}.get(
+            value.lower() if value else value, value
+        )
+
+    search_dict = {
+        field: get_param(field)
+        for field in self.search_fields
+        if get_param(field) != None
+    }
+    return queryset.filter(**search_dict)
+
+
 def order_queryset(self, queryset):
     ordering = self.request.query_params.get("ordering", None)
     if ordering in self.ordering_fields:
         return queryset.order_by(ordering)
     return queryset
+
+
+def prepare_queryset(self, queryset):
+    return order_queryset(self, search_queryset(self, queryset))
 
 
 class ManagersUserGroupView(generics.ListCreateAPIView):
@@ -190,14 +210,12 @@ class MenuItemsView(generics.ListCreateAPIView):
     serializer_class = MenuItemSerializer
     ordering_fields = ["title", "price", "category_id"]
     ordering = ["category_id"]
+    search_fields = ["title", "category"]
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        category = self.request.query_params.get("category", None)
-        if category:
-            queryset = queryset.filter(category=category)
-        return order_queryset(self, queryset)
+        return prepare_queryset(self, queryset)
 
     def get_permissions(self):
         if self.request.method in self.allowed_methods:
@@ -226,7 +244,7 @@ class CartView(generics.ListCreateAPIView, generics.DestroyAPIView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        return order_queryset(self, queryset)
+        return prepare_queryset(self, queryset)
 
     def get_permissions(self):
         check_if_customer(self)
@@ -266,17 +284,12 @@ class OrdersView(generics.ListCreateAPIView):
     serializer_class = OrderSerializer
     ordering_fields = ["user_id", "delivery_crew_id", "status", "date", "total"]
     ordering = ["-date", "status"]
+    search_fields = ["status", "date"]
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        status = self.request.query_params.get("status", None)
-        date = self.request.query_params.get("date", None)
-        if status:
-            queryset = queryset.filter(status=status)
-        if date:
-            queryset = queryset.filter(date=date)
-        return order_queryset(self, queryset)
+        return prepare_queryset(self, queryset)
 
     def get(self, request, *args, **kwargs):
         orders = Order.objects.all()
@@ -347,7 +360,7 @@ class OrderView(generics.RetrieveUpdateDestroyAPIView):
         except Order.DoesNotExist:
             raise NotFound()
 
-    def update(self, request, *args, **kwargs):
+    def put(self, request, *args, **kwargs):
         raise MethodNotAllowed(request.method)
 
     def partial_update(self, request, *args, **kwargs):
