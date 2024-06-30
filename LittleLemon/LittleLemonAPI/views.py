@@ -348,8 +348,9 @@ class OrderView(generics.RetrieveUpdateDestroyAPIView):
             raise NotFound()
 
     def update(self, request, *args, **kwargs):
-        if request.method == "PUT":
-            raise MethodNotAllowed(request.method)
+        raise MethodNotAllowed(request.method)
+
+    def partial_update(self, request, *args, **kwargs):
         if check_if_manager(self, False):
             for key in list(request.data.keys()):
                 if key not in ["status", "delivery_crew_id"]:
@@ -376,7 +377,7 @@ class OrderView(generics.RetrieveUpdateDestroyAPIView):
             raise PermissionDenied(
                 {"message": "Only managers and delivery crew can access this method"}
             )
-        return super().update(request, *args, **kwargs)
+        return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         groups = self.request.user.groups
